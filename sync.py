@@ -6,7 +6,7 @@ import subprocess
 
 # 配置参数
 # ⚠️ 请确保填写了正确的 24 位频道 ID (形如 UCxxxxxxxxxxxx)
-YOUTUBE_CHANNEL_ID = "UCxxxxxxxxxxxxxxxxxxxxxxxx" 
+YOUTUBE_CHANNEL_ID = "UC8UCbiPrm2zN9nZHKdTevZA" 
 LIST_FILE = "list.json"
 
 # 可用的公开 Invidious 实例 API（如果第一个失败会自动尝试后面的）
