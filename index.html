@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>每日音频播放器</title>
+    <title>我的专属音频播放器</title>
     <style>
         body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #f0f2f5; margin: 0; }
         .player-container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 400px; }
@@ -13,27 +13,13 @@
 </head>
 <body>
     <div class="player-container">
-        <h2 id="title">正在加载最新音频...</h2>
+        <h2>今日最新音频</h2>
         <audio id="audioPlayer" controls autoplay></audio>
     </div>
 
     <script>
-        // 自动读取同目录下的 list.json
-        fetch('./list.json?t=' + Date.now())
-            .then(res => res.json())
-            .then(data => {
-                if(data && data.length > 0) {
-                    const latest = data[0]; // 获取最新的一条
-                    document.getElementById('title').innerText = latest.title;
-                    document.getElementById('audioPlayer').src = './' + latest.filename;
-                } else {
-                    document.getElementById('title').innerText = "暂无音频";
-                }
-            })
-            .catch(err => {
-                document.getElementById('title').innerText = "加载失败";
-                console.error(err);
-            });
+        // 动态加上时间戳，确保每次打开网页都向服务器请求最新的文件内容
+        document.getElementById('audioPlayer').src = './today.mp3?t=' + Date.now();
     </script>
 </body>
 </html>
