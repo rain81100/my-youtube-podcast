@@ -1,9 +1,14 @@
 import os
 import json
+import re
+import urllib.request
+import xml.etree.ElementTree as ET
 import yt_dlp
 
 # 配置参数
-YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@wongkim728/streams" # ⚠️ 确保修改为目标账号URL
+# ⚠️ 注意：这里请填写频道的唯一ID（Channel ID），形如 UCxxxxxxxxxxxx
+# 如果你只有类似 @username 的名字，可以在网页上右键查看源代码搜 "channelId" 找到，或者通过第三方工具查询。
+YOUTUBE_CHANNEL_ID = "UC8UCbiPrm2zN9nZHKdTevZA" 
 LIST_FILE = "list.json"
 
 # 1. 读取已有列表
@@ -13,71 +18,82 @@ if os.path.exists(LIST_FILE):
 else:
     audio_list = []
 
-# 2. 增强型配置：伪装成移动端客户端，绕过 "Sign in to confirm you're not a bot"
-base_opts = {
-    'extract_audio': True,
-    'format': 'bestaudio/best',
-    'playlistend': 1,  # 只取最新那一个
-    # 核心：使用 ios/android 客户端伪装，避免触发人机验证
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['ios', 'android'],
-            'skip': ['webpage']
-        }
-    },
-    # 强制不使用可能会暴露 GitHub Actions 服务器特征的某些网页端接口
-    'youtube_include_dash_manifest': False,
-    'youtube_include_hls_manifest': False,
-}
+def get_latest_video_from_rss(channel_id):
+    """通过无需验证的 RSS 源直接获取最新视频信息"""
+    rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    req = urllib.request.Request(rss_url, headers=headers)
+    
+    with urllib.request.urlopen(req) as response:
+        xml_data = response.read()
+        
+    root = ET.fromstring(xml_data)
+    # XML 命名空间处理
+    ns = {'ns': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+    
+    # 获取第一个 entry（最新视频）
+    entry = root.find('ns:entry', ns)
+    if entry is not None:
+        video_id = entry.find('yt:videoId', ns).text
+        video_title = entry.find('ns:title', ns).text
+        return video_id, video_title
+    return None, None
 
-# 3. 检查最新视频
 try:
-    with yt_dlp.YoutubeDL(base_opts) as ydl:
-        info = ydl.extract_info(YOUTUBE_CHANNEL_URL, download=False)
-        if 'entries' in info and len(info['entries']) > 0:
-            latest_video = info['entries'][0]
-            video_id = latest_video['id']
-            video_title = latest_video['title']
-            filename = f"{video_id}.mp3"
+    print("正在通过 RSS 读取频道最新动态...")
+    video_id, video_title = get_latest_video_from_rss(YOUTUBE_CHANNEL_ID)
+    
+    if video_id and video_title:
+        filename = f"{video_id}.mp3"
+        
+        # 2. 检查是否已经下载过
+        if not any(item['id'] == video_id for item in audio_list):
+            print(f"发现新视频: {video_title} (ID: {video_id}), 开始下载...")
             
-            # 4. 检查是否已经下载过
-            if not any(item['id'] == video_id for item in audio_list):
-                print(f"发现新视频: {video_title}, 开始下载...")
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+            
+            # 3. 极限伪装配置：针对单视频下载
+            download_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': filename,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '128',
+                }],
+                # 全套移动端及模拟浏览器伪装，配合單 URL 绕过检测
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android', 'mweb'],
+                        'skip': ['webpage']
+                    }
+                },
+                'youtube_include_dash_manifest': False,
+                'youtube_include_hls_manifest': False,
+                'nocheckcertificate': True,
+                'quiet': False
+            }
+            
+            with yt_dlp.YoutubeDL(download_opts) as ydl_dl:
+                ydl_dl.download([video_url])
+            
+            # 更新列表并只保留最新的 5 条音频
+            audio_list.insert(0, {"id": video_id, "title": video_title, "filename": filename})
+            
+            if len(audio_list) > 5:
+                old_audio = audio_list.pop()
+                if os.path.exists(old_audio['filename']):
+                    os.remove(old_audio['filename'])
+            
+            with open(LIST_FILE, 'w', encoding='utf-8') as f:
+                json.dump(audio_list, f, ensure_ascii=False, indent=4)
                 
-                # 合并配置用于实际下载转码
-                download_opts = base_opts.copy()
-                download_opts.update({
-                    'outtmpl': filename,
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '128',
-                    }],
-                })
-                
-                with yt_dlp.YoutubeDL(download_opts) as ydl_dl:
-                    ydl_dl.download([f"https://www.youtube.com/watch?v={video_id}"])
-                
-                # 更新列表并只保留最新的 5 条音频，防止仓库体积过大
-                audio_list.insert(0, {"id": video_id, "title": video_title, "filename": filename})
-                
-                # 删掉旧音频文件（如果列表中超过5条）
-                if len(audio_list) > 5:
-                    old_audio = audio_list.pop()
-                    if os.path.exists(old_audio['filename']):
-                        os.remove(old_audio['filename'])
-                
-                # 写入更新后的 json
-                with open(LIST_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(audio_list, f, ensure_ascii=False, indent=4)
-                    
-                print("同步及本地文件更新完成！")
-            else:
-                print("已经是最新音频，无需更新。")
+            print("同步及文件更新完成！")
         else:
-            print("未能提取到频道内的视频列表，请确认频道URL是否正确或对方近期是否有发布视频。")
+            print("已经是最新音频，无需更新。")
+    else:
+        print("未能在 RSS 中找到视频，请检查 YOUTUBE_CHANNEL_ID 是否正确。")
 
 except Exception as e:
     print(f"脚本执行出错: {str(e)}")
-    # 抛出异常确保 GitHub Actions 能显示失败以便查看排查，但上面的报错已经被捕获处理
     raise e
