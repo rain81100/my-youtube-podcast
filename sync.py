@@ -3,7 +3,7 @@ import json
 import yt_dlp
 
 # 配置参数
-YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@特定账号的Handle" # ⚠️修改为你想抓取的YouTube账号URL
+YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@wongkim728/streams" # ⚠️修改为你想抓取的YouTube账号URL
 LIST_FILE = "list.json"
 
 # 1. 读取已有列表
